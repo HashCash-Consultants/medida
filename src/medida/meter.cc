@@ -29,7 +29,7 @@ class Meter::Impl {
   const std::chrono::nanoseconds rate_unit_;
   std::atomic<std::uint64_t> count_;
   const Clock::time_point start_time_;
-  std::atomic<std::uint64_t> last_tick_;
+  std::atomic<std::int64_t> last_tick_;
   stats::EWMA m1_rate_;
   stats::EWMA m5_rate_;
   stats::EWMA m15_rate_;
@@ -96,14 +96,14 @@ void Meter::Process(MetricProcessor& processor) {
 
 
 Meter::Impl::Impl(std::string event_type, std::chrono::nanoseconds rate_unit) 
-    : event_type_ {event_type},
-      rate_unit_  {rate_unit},
-      count_      {0},
-      start_time_ {Clock::now()},
-      last_tick_  {std::chrono::duration_cast<std::chrono::nanoseconds>(start_time_.time_since_epoch()).count()},
-      m1_rate_    {stats::EWMA::oneMinuteEWMA()},
-      m5_rate_    {stats::EWMA::fiveMinuteEWMA()},
-      m15_rate_   {stats::EWMA::fifteenMinuteEWMA()} {
+    : event_type_ (event_type),
+      rate_unit_  (rate_unit),
+      count_      (0),
+      start_time_ (Clock::now()),
+      last_tick_  (std::chrono::duration_cast<std::chrono::nanoseconds>(start_time_.time_since_epoch()).count()),
+      m1_rate_    (stats::EWMA::oneMinuteEWMA()),
+      m5_rate_    (stats::EWMA::fiveMinuteEWMA()),
+      m15_rate_   (stats::EWMA::fifteenMinuteEWMA()) {
 }
 
 

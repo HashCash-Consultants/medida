@@ -8,7 +8,11 @@
 #include <ctime>
 #include <mutex>
 #include <sstream>
+#ifdef _WIN32
+#include <Winsock2.h>
+#else
 #include <sys/utsname.h>
+#endif
 
 #include "medida/reporting/util.h"
 
@@ -72,9 +76,21 @@ void JsonReporter::Process(Timer& timer) {
 
 JsonReporter::Impl::Impl(JsonReporter& self, MetricsRegistry &registry)
     : self_     (self),
-      registry_ (registry_) {
+      registry_ (registry) {
+#ifdef _WIN32
+	char nameBuf[128];
+	if (gethostname(nameBuf, sizeof(nameBuf)) == 0)
+	{
+		uname_ = std::string(nameBuf);
+	}
+	else
+	{
+		uname_ = std::string("localhost");
+	}
+#else
   utsname name;
   uname_ = {uname(&name) ? "localhost" : name.nodename};
+#endif
 }
 
 
@@ -85,7 +101,18 @@ JsonReporter::Impl::~Impl() {
 std::string JsonReporter::Impl::Report() {
   auto t = std::time(NULL);
   char mbstr[32] = "";
-  std::strftime(mbstr, 32, "%FT%T%z", std::localtime(&t));
+
+  std::tm tm;
+#ifdef _WIN32
+    // On Win32 this is returns a thread-local and there's no _r variant.
+    std::tm *tmPtr = gmtime(&t);
+    tm = *tmPtr;
+#else
+    // On unix the _r variant uses a local output, so is threadsafe.
+    gmtime_r(&t, &tm);
+#endif
+
+  std::strftime(mbstr, 32, "%FT%TZ", &tm);
   std::lock_guard<std::mutex> lock {mutex_};
   out_.str("");
   out_.clear();
@@ -134,6 +161,10 @@ void JsonReporter::Impl::Process(Meter& meter) {
 
 void JsonReporter::Impl::Process(Histogram& histogram) {
   auto snapshot = histogram.GetSnapshot();
+#ifdef _WIN32
+#undef min
+#undef max
+#endif
   out_ << "\"type\":\"histogram\"," << std::endl
        << "\"min\":" << histogram.min() << "," << std::endl
        << "\"max\":" << histogram.max() << "," << std::endl
@@ -150,9 +181,17 @@ void JsonReporter::Impl::Process(Histogram& histogram) {
 
 void JsonReporter::Impl::Process(Timer& timer) {
   auto snapshot = timer.GetSnapshot();
-  auto unit = FormatRateUnit(timer.duration_unit());
+  auto rate_unit = FormatRateUnit(timer.rate_unit());
+  auto duration_unit = FormatRateUnit(timer.duration_unit());
   out_ << "\"type\":\"timer\"," << std::endl
-       << "\"unit\":\"" << unit << "\"," << std::endl
+       << "\"count\":" << timer.count() << "," << std::endl
+       << "\"event_type\":\"" << timer.event_type() << "\"," << std::endl
+       << "\"rate_unit\":\"" << rate_unit << "\"," << std::endl
+       << "\"mean_rate\":" << timer.mean_rate() << "," << std::endl
+       << "\"1_min_rate\":" << timer.one_minute_rate() << "," << std::endl
+       << "\"5_min_rate\":" << timer.five_minute_rate() << "," << std::endl
+       << "\"15_min_rate\":" << timer.fifteen_minute_rate() << "," << std::endl
+       << "\"duration_unit\":\"" << duration_unit << "\"," << std::endl
        << "\"min\":" << timer.min() << "," << std::endl
        << "\"max\":" << timer.max() << "," << std::endl
        << "\"mean\":" << timer.mean() << "," << std::endl
